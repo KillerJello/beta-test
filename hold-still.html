@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hold Still — session prototype</title>
+<style>
+  :root{--bg:#121419;--card:#1c1f27;--line:#2f3440;--text:#e8eaee;--muted:#9aa1ad;--accent:#d4a24c;--good:#3fb27f;--bad:#e5534b;--warn:#e0a23a;--grip:#c9a36b}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:19px/1.5 "Segoe UI",system-ui,sans-serif;user-select:none;-webkit-user-select:none;overflow-x:hidden}
+  .hidden{display:none!important}
+  .wrap{max-width:1000px;margin:0 auto;padding:22px}
+  h1{font-size:34px;margin:6px 0 4px}
+  .dim{color:var(--muted)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 24px;margin:14px 0}
+  .opts{display:flex;flex-wrap:wrap;gap:12px}
+  .opt{border:1px solid var(--line);background:#242833;color:var(--text);border-radius:10px;padding:12px 18px;cursor:pointer;font:inherit;text-align:left;min-width:180px}
+  .opt.sel{border-color:var(--accent);box-shadow:0 0 0 2px #d4a24c55}
+  .opt small{display:block;color:var(--muted);font-size:14px}
+  .btn{border:1px solid var(--accent);background:var(--accent);color:#1a1205;border-radius:10px;padding:12px 26px;font:inherit;font-weight:600;cursor:pointer}
+  .btn.out{background:transparent;color:var(--text);border-color:var(--line)}
+  label.tog{display:inline-flex;gap:8px;align-items:center;margin-right:22px;cursor:pointer}
+
+  /* the session */
+  #sess{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column}
+  #hud{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:14px 22px;border-bottom:1px solid var(--line);background:#16181e;z-index:5}
+  #count{font-size:26px;font-weight:700}
+  .bars{display:grid;grid-template-columns:70px 260px;gap:6px 10px;align-items:center;font-size:15px}
+  .bar{height:14px;background:#2a2e38;border-radius:7px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;border-radius:7px;transition:width .12s}
+  #keys{font-size:15px;text-align:right;line-height:1.9}
+  .key{display:inline-block;min-width:28px;padding:1px 8px;border-radius:6px;font-weight:700;text-align:center;margin-left:6px}
+  .ky{background:#e0a23a;color:#1a1205}.kr{background:#e5534b;color:#fff}.ke{background:#3a4152;color:#fff}
+  #stageWrap{flex:1;position:relative;overflow:hidden}
+  #stage{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding-top:22px;will-change:filter,transform}
+  #orders{display:flex;align-items:center;justify-content:center;gap:16px;min-height:74px;padding:10px 22px;background:#1a1d24;border-bottom:1px solid var(--line);z-index:5}
+  #say{font-size:25px;font-weight:600;text-align:center;max-width:900px}
+  #alert{font-size:18px;font-weight:800;color:#fff;background:#c0121c;border-radius:10px;padding:6px 14px;opacity:0;transition:opacity .3s;white-space:nowrap}
+  #alert.on{opacity:1;animation:pulse .5s 3}
+  @keyframes pulse{50%{transform:scale(1.08)}}
+  #extras{font-size:15px;color:#ff8a80;font-weight:700}
+  #arena{position:relative;width:min(900px,94vw);height:330px;margin-top:8px;border-radius:14px;background:radial-gradient(ellipse at 50% 40%,#232733,#16181e 70%);touch-action:none;cursor:crosshair}
+  #rail{position:absolute;left:4%;right:4%;height:16px;border-radius:8px;background:linear-gradient(#6b4f33,#4a3522);box-shadow:0 2px 0 #2a1e14}
+  #railLbl{position:absolute;left:4%;font-size:14px;color:var(--muted)}
+  #grip,#trap{position:absolute;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;font-weight:700;letter-spacing:.03em;pointer-events:none;white-space:nowrap;background:var(--grip);color:#2a1d0c;box-shadow:0 0 0 3px #00000040}
+
+  #grip.held{box-shadow:0 0 0 3px #3fb27f,0 0 22px #3fb27f66}
+  #grip.slip{box-shadow:0 0 0 3px #e5534b,0 0 22px #e5534b66}
+
+  #voice{font-size:22px;font-style:italic;color:#c9b6e8;min-height:40px;margin-top:20px;max-width:840px;text-align:center;padding:0 18px}
+  #vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 45%,#8b0a12 100%);opacity:0;transition:opacity .2s}
+  #flash{position:absolute;inset:0;pointer-events:none;background:#c0121c;opacity:0}
+  #hint{position:absolute;left:0;right:0;bottom:16px;text-align:center;font-size:15px;color:var(--muted);pointer-events:none}
+  #res table{border-collapse:collapse;width:100%;margin-top:6px}
+  #res td{padding:6px 4px;border-bottom:1px solid var(--line)}
+  #res td:last-child{text-align:right;font-weight:600}
+</style>
+</head>
+<body>
+
+<!-- set-up -->
+<div class="wrap" id="setup">
+  <h1>Hold Still</h1>
+  <div class="dim">Session prototype · you're the one being punished. Hold your grip, read your own limits, and decide when it's too much.</div>
+
+  <div class="card">
+    <b>Tonight's implement</b>
+    <div class="opts" id="impOpts" style="margin-top:10px"></div>
+  </div>
+  <div class="card">
+    <b>Difficulty</b>
+    <div class="opts" id="difOpts" style="margin-top:10px"></div>
+    <div style="margin-top:14px"><label class="tog"><input type="checkbox" id="calm"> Reduced motion (less shaking)</label>
+      <label class="tog"><input type="checkbox" id="snd" checked> Sound</label></div>
+  </div>
+  <div class="card">
+    <b>How it works</b>
+    <ul style="margin:8px 0 0 0;padding-left:22px">
+      <li><b>Press and hold</b> on your <b>fist</b> to stay in position. Strokes knock it out from under you — find it again fast.</li>
+      <li>The <b>open hand</b> — reaching back to cover — rides the same track, closer as it hurts more. Touch it, or drag through it, and your hand goes back.</li>
+      <li>Pain brings <b>tears</b> (the screen blurs, badly near your limit) and every stroke <b>shakes</b> you. The hardest go <b>black</b> for a moment.</li>
+      <li><b>Light</b> implements come at an uneven pace and keep your grip busy, but you get more leeway. <b>Heavy</b> ones are steady and easy to hold between strokes — but the tears come fast.</li>
+      <li>Your real limit is <b>hidden</b>. Listen to the voice in your head. Orders and penalties always show clearly in the top bar.</li>
+      <li>Run out of <b>poise</b> and you get a break: the sting fades, the ache doesn't, and then it's back in position.</li>
+      <li>Keys that always work: <span class="key ky">Y</span> yellow — slower and softer for a while · <span class="key kr">SPACE</span> red — stop · <span class="key ke">E</span> ask if that's enough.</li>
+    </ul>
+    <div class="dim" id="condLine" style="margin-top:10px"></div>
+  </div>
+  <button class="btn" id="go">Begin</button>
+</div>
+
+<!-- the session -->
+<div id="sess" class="hidden">
+  <div id="hud">
+    <div><div id="count">0 / 0</div><div id="extras"></div><div class="dim" id="impName" style="font-size:15px"></div></div>
+    <div class="bars">
+      <span>Sting</span><div class="bar"><i id="bS" style="background:linear-gradient(90deg,#f0a04b,#ff6b5e)"></i></div>
+      <span>Ache</span><div class="bar"><i id="bA" style="background:linear-gradient(90deg,#b5303f,#6d1626)"></i></div>
+      <span>Poise</span><div class="bar"><i id="bC" style="background:#3fb27f;width:100%"></i></div>
+    </div>
+    <div id="keys"><span class="key ky">Y</span> yellow<br><span class="key kr">SPACE</span> red — stop<br><span class="key ke">E</span> “Is that enough?”</div>
+  </div>
+  <div id="orders"><div id="say"></div><div id="alert"></div></div>
+  <div id="stageWrap">
+    <div id="stage">
+      <div id="arena">
+        <div id="railLbl"></div>
+        <div id="rail"></div>
+        <div id="grip"><svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17c0-2.2 1.8-4 4-4s4 1.8 4 4"/><path d="M18 16c0-2.2 1.8-4 4-4s4 1.8 4 4"/><path d="M26 17c0-2 1.6-3.6 3.6-3.6S33 15 33 17v7c0 6-4.5 10-10.5 10S10 30 10 24.5V17"/><path d="M10 21c-2.4-.4-4 1-4 3s2 3.6 5 3.5c3.8-.1 7-1.6 9-3.6"/></g></svg><span class="w">GRIP</span></div>
+        <div id="trap"><svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21V9.5a2 2 0 0 1 4 0V19"/><path d="M17 18V7.5a2 2 0 0 1 4 0V18"/><path d="M21 18.5V9a2 2 0 0 1 4 0v10"/><path d="M25 20v-6.5a2 2 0 0 1 4 0V25c0 5.5-4 9-9.5 9C14 34 11 31 9 27l-3.3-6a2 2 0 0 1 3.4-2L13 24"/></g></svg><span class="w">BACK</span></div>
+      </div>
+      <div id="voice"></div>
+    </div>
+    <div id="vig"></div>
+    <div id="flash"></div>
+    <div id="hint"></div>
+  </div>
+</div>
+
+<!-- results -->
+<div class="wrap hidden" id="res">
+  <h1 id="resTitle"></h1>
+  <div class="card" id="resText" style="font-size:20px"></div>
+  <div class="card"><table id="resTable"></table></div>
+  <button class="btn" id="again">Again</button> <button class="btn out" id="toSetup">Change implement</button>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const load = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch(e){ return d; } };
+const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
+
+/* ---------- implements ---------- */
+// s sting, a ache per stroke · gap ms between strokes · jump: how far a stroke knocks the grip · shake px
+// light: slow, uneven pacing — the grip is busier, but you get more leeway, and the tears come slowly
+// heavy: steady and deliberate — the grip is easy to hold between strokes, but each one jolts you and the tears come fast
+const IMPS = {
+  "Hand":         {fam:"light", s:10, a:0.8, gap:1700, count:40, jump:45,  shake:7,  pos:"Over the knee", rail:"the chair leg",
+                   start:"Over my knee. Hold on to the chair leg, and keep holding it. Let go, and we'll talk about it."},
+  "Wooden spoon": {fam:"light", s:15, a:1.3, gap:1800, count:30, jump:55,  shake:9,  pos:"Over the knee", rail:"the chair leg",
+                   start:"Over my knee. Yes, the wooden spoon. Take hold of that chair leg — and keep hold of it."},
+  "Hairbrush":    {fam:"light", s:18, a:2.0, gap:2000, count:25, jump:62,  shake:12, pos:"Over the knee", rail:"the chair leg",
+                   start:"Over my knee. The hairbrush tonight. Grip that chair leg and don't you dare let go."},
+  "Paddle":       {fam:"heavy", s:15, a:3.2, gap:2600, count:18, jump:80,  shake:16, pos:"Bent over the chair", rail:"the seat of the chair",
+                   start:"Bend over the chair. Both hands on the seat, and they stay there."},
+  "Strap":        {fam:"heavy", s:19, a:4.0, gap:3200, count:14, jump:92,  shake:18, pos:"Bent over the desk", rail:"the far edge of the desk",
+                   start:"Bend over the desk and take hold of the far edge. The strap. Fourteen. Hold that edge."},
+  "Tawse":        {fam:"heavy", s:24, a:5.2, gap:3900, count:12, jump:100, shake:21, pos:"Bent over the desk", rail:"the far edge of the desk",
+                   start:"Over the desk. Reach across and grip the edge. You know what the tawse is for."},
+  "Cane":         {fam:"heavy", s:42, a:9.6, gap:6500, count:6,  jump:120, shake:28, pos:"Bent over the desk", rail:"the far edge of the desk", bloom:18,
+                   start:"Bend over the desk. Reach across and take hold of the far edge. Six. And you'll hold that edge for every one of them."},
+};
+const FAMILY = {
+  light:{drift:1.6, wander:1.4, window:1.45, grip:1.15, pad:12, blur:0.7, label:"Light — uneven pace: a busy grip, more leeway, slow tears"},
+  heavy:{drift:0.35, wander:0.4, window:1.0, grip:1.0,  pad:0,  blur:1.3, label:"Heavy — steady pace: an easy grip, hard jolts, fast tears"},
+};
+const DIFF = {
+  // gap: the closest the open hand gets to the fist (edge to edge) · knock: how far a stroke throws you · slips: sweaty-handed jolts between strokes
+  easy:  {name:"Easy",   window:1700, grip:110, blur:0.6, gap:70, drift:0.6, knock:0.8, shrink:0,    slips:0},
+  normal:{name:"Normal", window:1150, grip:88,  blur:1.0, gap:24, drift:1.0, knock:1.0, shrink:0.15, slips:0},
+  hard:  {name:"Hard",   window:560,  grip:62,  blur:1.5, gap:4,  drift:1.9, knock:2.0, shrink:0.35, slips:1, wander:110, pad:0, noWords:true, noRail:true},
+};
+let cond = load("hs_cond", 0);                 // conditioning, 0–100: grows by taking it well
+let imp = IMPS[load("hs_imp", "Hairbrush")] ? load("hs_imp", "Hairbrush") : "Hairbrush", dif = load("hs_dif", "normal");
+
+/* ---------- words ---------- */
+const VOICE = [
+  [0.15, ["Okay. Okay. I can do this.", "Breathe. Just breathe.", "That's… not so bad."]],
+  [0.35, ["Ow. Okay, that one stung.", "Keep holding. Keep holding.", "It's getting warm back there."]],
+  [0.55, ["That really hurt.", "How many is that? I've lost count.", "My eyes are stinging."]],
+  [0.72, ["I can't take many more of those.", "Please let it be nearly over.", "Everything is on fire."]],
+  [0.86, ["If there's another one like that I'm going to—", "I can't, I can't, I can't—", "I need it to stop. I need it to stop."]],
+  [9,    ["…", "(you can't think anymore)"]],
+];
+const OUT_LINES = ["Hands. Back where they belong.", "Did I say you could let go? Hold on.", "Grip. Now.", "That's not holding on. Again."];
+const REACH_LINES = ["Hands away. Now.", "Move that hand, or I'll move it for you.", "Covering up won't help you. Hands back where they were."];
+const WAIT_LINES = ["I'm waiting. Hold on.", "We're not going anywhere until you take hold.", "Grip it. Then we continue."];
+const ENOUGH_NO = ["Enough? That's five more for asking.", "I'll decide what's enough. Five more.", "Not even close. Five more for that."];
+const ENOUGH_YES = ["…Yes. I think that's enough. You can let go.", "You know what? That's enough. You took that well.", "That'll do. Let go of the edge. We're done."];
+const YELLOW_LINES = ["Yellow. All right. Slower. But we're not finished.", "Yellow heard. I'll ease off for a bit.", "All right. Take a breath. Slower now."];
+
+/* ---------- sound ---------- */
+let AC = null;
+function smack(power){
+  if (!$("snd").checked) return;
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    const len = Math.floor(AC.sampleRate * (0.05 + 0.08 * power)), buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3 + 6 * (1 - power));
+    const src = AC.createBufferSource(), g = AC.createGain(), f = AC.createBiquadFilter();
+    f.type = "lowpass"; f.frequency.value = 900 + 3200 * power; g.gain.value = 0.35 + 0.5 * power;
+    src.buffer = buf; src.connect(f); f.connect(g); g.connect(AC.destination); src.start();
+  } catch(e){}
+}
+
+/* ---------- set-up screen ---------- */
+function setupScreen(){
+  $("impOpts").innerHTML = ["light", "heavy"].map(f => `<div style="width:100%" class="dim">${FAMILY[f].label}</div>` +
+    Object.entries(IMPS).filter(([, v]) => v.fam === f).map(([k, v]) => `<button class="opt ${k === imp ? "sel" : ""}" data-imp="${k}">${k}<small>${v.count} strokes · ${v.pos.toLowerCase()}</small></button>`).join("")).join("");
+  $("difOpts").innerHTML = Object.entries(DIFF).map(([k, v]) => `<button class="opt ${k === dif ? "sel" : ""}" data-dif="${k}">${v.name}<small>${k === "easy" ? "big grip, slow tears" : k === "normal" ? "as intended" : "nearly impossible: tiny shrinking grip, sweaty slips, no rail, no bars, no words"}</small></button>`).join("");
+  document.querySelectorAll("[data-imp]").forEach(b => b.onclick = () => { imp = b.dataset.imp; store("hs_imp", imp); setupScreen(); });
+  document.querySelectorAll("[data-dif]").forEach(b => b.onclick = () => { dif = b.dataset.dif; store("hs_dif", dif); setupScreen(); });
+  $("calm").checked = load("hs_calm", false); $("calm").onchange = () => store("hs_calm", $("calm").checked);
+  $("condLine").textContent = `Conditioning: ${Math.round(cond)}/100 — the more you've learned to take, the less each stroke blurs and shakes you.`;
+}
+$("go").onclick = () => start();
+$("again").onclick = () => start();
+$("toSetup").onclick = () => { $("res").classList.add("hidden"); $("setup").classList.remove("hidden"); setupScreen(); };
+
+/* ---------- the session ---------- */
+let S = null, raf = 0;
+function start(){
+  const I = IMPS[imp], F = FAMILY[I.fam], D0 = DIFF[dif];
+  const D = Object.assign({}, D0, {hard: dif === "hard", drift: D0.drift * F.drift, window: D0.window * F.window, grip: Math.round(D0.grip * F.grip),
+                                   pad: (D0.pad ?? 8) + F.pad, blur: D0.blur * F.blur, wander: D0.wander ? D0.wander * F.wander : 0});
+  $("setup").classList.add("hidden"); $("res").classList.add("hidden"); $("sess").classList.remove("hidden");
+  const A = $("arena").getBoundingClientRect();
+  const railY = I.fam === "heavy" ? 130 : 180;
+  S = {I, D, imp, count:I.count, done:0, pS:0, pA:0, tears:0, poise:100,
+       limit: rnd(68, 104) + cond * 0.35,                   // hidden: how much ache you can really take today
+       railY, gx: A.width * 0.5, gBase: A.width * 0.5, phase:"waitgrip", nextAt:0, lastT:performance.now(),
+       down:false, px:-999, py:-999, holding:false, slipSince:0, graceUntil:0, outs:0, reaches:0, trapDwell:0,
+       yellowLeft:0, yellows:0, asks:0, cueAt:0, bloomAt:0, outcome:null, trapAng: Math.random() < 0.5 ? -1 : 1, shakeUntil:0, shakeAmp:0, voiceAt:0, waitSaid:0,
+       tx: A.width * 0.5 + 300, nextSlip: performance.now() + rnd(3000, 6000), firstSlip:null, gw:D.grip};
+  $("railLbl").textContent = `${I.pos} — grip ${I.rail}`;
+  $("rail").style.top = railY + "px"; $("railLbl").style.top = (railY - 30) + "px";
+  $("rail").style.display = D.noRail ? "none" : ""; $("railLbl").style.display = D.noRail ? "none" : "";          // hard: no rail, just two hands in the dark
+  $("grip").style.width = D.grip + "px"; $("trap").style.width = D.grip + "px";
+  $("hud").querySelector(".bars").style.visibility = D.hard ? "hidden" : "visible";          // hard: no bars, just your body to go on
+
+  $("impName").textContent = `${imp} · ${D.name}`;
+  $("voice").textContent = "";
+  say(I.start);
+  $("hint").textContent = "Press and hold on the GRIP to take position.";
+  cancelAnimationFrame(raf); raf = requestAnimationFrame(loop);
+  render();
+}
+function say(t){ $("say").textContent = t; }
+let ALERT_T = 0;
+function alertHud(t, bg){ const a = $("alert"); a.textContent = t; a.style.background = bg || "#c0121c"; a.classList.remove("on"); void a.offsetWidth; a.classList.add("on"); clearTimeout(ALERT_T); ALERT_T = setTimeout(() => a.classList.remove("on"), 2600); }
+function think(t){ $("voice").textContent = t ? "“" + t + "”" : ""; }
+
+// pointer: where you're pressing, and whether you're pressing at all
+const arena = $("arena");
+arena.addEventListener("pointerdown", e => {
+  if (!S || S.outcome) return;
+  try { arena.setPointerCapture(e.pointerId); } catch(_){}
+  S.down = true; setP(e);
+  if (onTrap()) reachBack();
+});
+arena.addEventListener("pointermove", e => { if (S) setP(e); });
+window.addEventListener("pointerup", () => { if (S) S.down = false; });
+window.addEventListener("pointercancel", () => { if (S) S.down = false; });
+function setP(e){ const r = arena.getBoundingClientRect(); S.px = e.clientX - r.left; S.py = e.clientY - r.top; }
+const gripRect = () => ({x: S.gx - S.gw / 2, y: S.railY - 23, w: S.gw, h: 46});
+// the open hand rides the same track, closing in as it hurts — and it lags, so a stroke can throw you past it
+function trapTarget(){
+  const A = arena.getBoundingClientRect(), pain = painLevel();
+  const near = S.gw + S.D.gap, far = 340;
+  const dist = far - (far - near) * Math.pow(clamp(pain, 0, 1), 0.75);
+  let x = S.gx + S.trapAng * dist;
+  if (x < S.gw / 2 + 6 || x > A.width - S.gw / 2 - 6) x = S.gx - S.trapAng * dist;
+  return clamp(x, S.gw / 2 + 6, A.width - S.gw / 2 - 6);
+}
+const trapPos = () => ({x: S.tx - S.gw / 2, y: S.railY - 23, w: S.gw, h: 46});
+const inR = (r, pad = 0) => S.px >= r.x - pad && S.px <= r.x + r.w + pad && S.py >= r.y - pad && S.py <= r.y + r.h + pad;
+const onGrip = () => inR(gripRect(), S.D.pad ?? 8);
+const onTrap = () => inR(trapPos(), 0);
+// how much it hurts right now, relative to what you can take (0 … 1+), shown to the player only through effects
+const painLevel = () => clamp((S.pA / S.limit) * 0.75 + (S.pS / 60) * 0.35, 0, 1.2);
+
+function loop(now){
+  if (!S || S.outcome) return;
+  const dt = Math.min(0.1, (now - S.lastT) / 1000); S.lastT = now;
+  // the body
+  S.pS *= Math.exp(-dt / 1.6);
+  if (S.bloomAt && now >= S.bloomAt){ S.pA += S.I.bloom * S.bloomQ * 0.25; S.pS += S.I.bloom * S.bloomQ; S.bloomAt = 0; }
+  const tearsTarget = clamp(Math.pow(S.pA / S.limit, 1.3) * 0.95 + S.pS / 260, 0, 1);
+  S.tears += (tearsTarget - S.tears) * dt * (S.tears > tearsTarget ? 0.35 : 0.6);
+  // the grip drifts — more as it hurts
+  const A = arena.getBoundingClientRect(), pain = painLevel();
+  const drift = (8 + 46 * pain) * S.D.drift * (1 - cond / 250) + (S.I.fam === "light" ? 14 : 0);
+  S.gw = S.D.grip * (1 - S.D.shrink * clamp(pain, 0, 1));
+  if (S.D.wander && S.phase === "active"){
+    S.wv = clamp((S.wv || 0) + rnd(-1, 1) * S.D.wander * 6 * dt, -S.D.wander, S.D.wander);
+    S.gBase = clamp(S.gBase + S.wv * dt, 70, A.width - 70); if (S.gBase <= 70 || S.gBase >= A.width - 70) S.wv = -S.wv;
+  }
+  S.gx = clamp(S.gBase + Math.sin(now / 900) * drift + Math.sin(now / 370) * drift * 0.35, S.gw / 2 + 10, A.width - S.gw / 2 - 10);
+  const tt = trapTarget(), speed = (140 + 260 * pain) * dt;          // the open hand slides after its place, not instantly
+  S.tx += clamp(tt - S.tx, -speed, speed);
+  // hard: sweaty hands — the grip jolts on its own between strokes
+  if (S.D.slips && S.phase === "active" && now >= S.nextSlip){
+    S.gBase = clamp(S.gBase + (Math.random() < 0.5 ? -1 : 1) * rnd(30, 70) * (0.6 + pain), 70, A.width - 70);
+    S.graceUntil = now + 80; S.nextSlip = now + rnd(1200, 3000) * (1.2 - 0.5 * clamp(pain, 0, 1));
+  }
+  // holding?
+  const was = S.holding;
+  S.holding = S.down && onGrip();
+  if (S.down && onTrap() && !S.holding){ S.trapDwell += dt; if (S.trapDwell > 0.22) reachBack(); } else S.trapDwell = 0;
+  // the session
+  if (S.phase === "break"){
+    S.poise = Math.min(100, S.poise + dt * (70 / ((S.D.hard ? 9 : 12))));
+    S.tears = Math.max(0, S.tears - dt * 0.03);
+    const left = Math.ceil((S.breakEnd - now) / 1000);
+    $("hint").textContent = left > 0 ? `Break — ${left}s` : "";
+    if (now >= S.breakEnd){ S.phase = "waitgrip"; S.poise = Math.max(S.poise, 70); say(pick(["Back in position. Take hold.", "Right. Back over, and take hold.", "Time's up. Back where you were."])); $("hint").textContent = "Press and hold on the GRIP to take position."; }
+  } else if (S.phase === "waitgrip"){
+    if (S.holding){ S.phase = "active"; S.nextAt = now + 1400; $("hint").textContent = ""; say(pick(["Good. Now hold it.", "That's it. And keep holding.", "Right."])); }
+  } else if (S.phase === "active"){
+    if (!S.holding){
+      if (now > S.graceUntil && !S.awaitRegrip){
+        if (!S.slipSince) S.slipSince = now;
+        if (now - S.slipSince > S.D.window) outOfPosition();
+      }
+      if (S.nextAt && now >= S.nextAt && now - S.waitSaid > 3000){ S.waitSaid = now; say(pick(WAIT_LINES)); }
+    } else { S.slipSince = 0; S.awaitRegrip = false; }
+    if (S.holding && now >= S.nextAt) stroke(now);
+  }
+  // red alert: way over — the body moves on its own
+  if (S.phase === "active" && S.pS + S.pA > S.limit + 55 && S.holding && Math.random() < dt * 1.2) reachBack(true);
+  if (S.pA >= S.limit) return breakdown();
+  render(now);
+  raf = requestAnimationFrame(loop);
+}
+function stroke(now){
+  const I = S.I, soft = S.yellowLeft > 0 ? 0.7 : 1;
+  S.done++; if (S.yellowLeft > 0) S.yellowLeft--;
+  S.pS += I.s * soft; S.pA += I.a * soft;
+  if (I.bloom){ S.bloomAt = now + 1100; S.bloomQ = soft; }
+  // tears jump with a hard one
+  S.tears = clamp(S.tears + (I.s * soft / 42) * 0.08, 0, 1);
+  // knocked off your grip
+  S.gBase = clamp(S.gBase + (Math.random() < 0.5 ? -1 : 1) * I.jump * S.D.knock * rnd(0.6, 1.2) * (1 - cond / 300), 70, arena.getBoundingClientRect().width - 70);
+  if (Math.random() < 0.25) S.trapAng *= -1;          // sometimes the open hand comes from the other side
+  S.graceUntil = now + 120;
+  S.shakeUntil = now + 380 + I.shake * 12; S.shakeAmp = I.shake * ($("calm").checked ? 0.2 : 1) * (1 - cond / 250);
+  const brutal = I.s >= 40 || S.pA / S.limit > 0.8, calm = $("calm").checked, fl = $("flash");
+  fl.style.transition = "none"; fl.style.background = brutal ? "#000" : "#c0121c";
+  fl.style.opacity = String((brutal ? 0.9 : S.D.hard ? Math.min(0.45, I.s / 100) : Math.min(0.35, 0.1 + I.s / 140)) * (calm ? 0.4 : 1));
+  setTimeout(() => { fl.style.transition = `opacity ${brutal ? 0.55 : 0.25}s`; fl.style.opacity = "0"; }, brutal && !calm ? 260 : 16);          // black holds a beat: you lose sight of your grip
+  smack(Math.min(1, I.s / 42));
+  S.cueAt = 0;
+  // the voice in your head
+  const f = S.pA / S.limit + S.pS / 240;          // the voice is your most honest clue to the hidden limit
+  think(pick(VOICE.find(([t]) => f < t)[1]));
+  if (S.done >= S.count) return finished("done");
+  S.nextAt = now + nextGap() * (S.yellowLeft > 0 ? 1.5 : 1);
+  if (S.done % 5 === 0 && I.count > 10) say(pick(["Keep holding.", "Still holding? Good.", "Halfway doesn't mean anything. Hold on.", "Don't you let go."]));
+}
+// how long until the next one: the light implements wander — a few quick ones, a long pause, never quite even
+function nextGap(){
+  const I = S.I;
+  if (I.fam !== "light") return I.gap * rnd(0.88, 1.12);
+  if (S.run > 0){ S.run--; return I.gap * rnd(0.4, 0.55); }
+  const r = Math.random();
+  if (r < 0.18){ S.run = Math.floor(rnd(1, 4)); return I.gap * rnd(0.45, 0.6); }          // a little run of quicker ones
+  if (r < 0.32) return I.gap * rnd(1.8, 2.8);                                             // a pause — you never know how long
+  return I.gap * rnd(0.75, 1.35);
+}
+// no poise left: you need a moment. Sting drains, the tears ease a little — the ache stays. The count stays too.
+function takeBreak(){
+  S.phase = "break"; S.breaks = (S.breaks || 0) + 1; S.down = false; S.awaitRegrip = false; S.slipSince = 0;
+  S.breakEnd = performance.now() + (S.D.hard ? 9000 : 12000);
+  say(pick(["Up. Stand there and breathe. We'll finish when you're ready.", "All right. Up. Take a minute — then back where you were.", "Stand up. Breathe. This isn't over, but you need a moment."]));
+  think(pick(["You're shaking. You can't stop shaking.", "Standing feels strange. Everything throbs.", "You wipe your eyes with the back of your hand."]));
+  alertHud("Break — get your breath back", "#3a4152");
+}
+function outOfPosition(){
+  if (S.firstSlip == null) S.firstSlip = S.done;
+  S.outs++; S.slipSince = 0; S.awaitRegrip = true; S.poise = Math.max(0, S.poise - 10);
+  const add = Math.min(S.outs === 1 ? 0 : S.outs === 2 ? 3 : 5, Math.max(0, Math.round(S.I.count * 1.6) - S.count));          // extras capped at +60%
+  S.count += add;
+  if (S.poise <= 0) return takeBreak();
+  say(pick(OUT_LINES) + (add ? ` That's ${add} more.` : S.outs === 1 ? " That's your warning." : ""));
+  S.extra = (S.extra || 0) + add; alertHud(add ? `+${add} — you let go` : "Warning — you let go", add ? "#c0121c" : "#a0661a");
+  S.nextAt = performance.now() + 1800;
+}
+function reachBack(involuntary){
+  if (S.phase !== "active" || S.reachedAt && performance.now() - S.reachedAt < 1500) return;
+  if (S.firstSlip == null) S.firstSlip = S.done;
+  S.reachedAt = performance.now(); S.reaches++; S.down = false; S.trapDwell = 0; S.poise = Math.max(0, S.poise - 15);
+  const add = Math.min(S.reaches === 1 ? 3 : 5, Math.max(0, Math.round(S.I.count * 1.6) - S.count)); S.count += add;
+  if (S.poise <= 0) return takeBreak();
+  think(involuntary ? "Your hands fly back before you can stop them." : "Your hand reaches back to cover — you couldn't help it.");
+  say(pick(REACH_LINES) + (add ? ` ${add} more for that.` : ""));
+  S.extra = (S.extra || 0) + add; if (add) alertHud(`+${add} — you reached back`);
+  S.nextAt = performance.now() + 2200; S.slipSince = 0; S.awaitRegrip = true;
+}
+// keys: always crisp, always there
+window.addEventListener("keydown", e => {
+  if (!S || S.outcome || $("sess").classList.contains("hidden")) return;
+  const k = e.key.toLowerCase();
+  if (e.code === "Space" || k === " "){ e.preventDefault(); finished("red"); return; }          // red: the biggest key, easy to find without looking
+  else if (k === "y" && S.phase === "active"){ S.yellows++; S.yellowLeft = 5; S.poise = Math.max(0, S.poise - 5); say(pick(YELLOW_LINES)); S.nextAt = performance.now() + 3200; }
+  else if (k === "e" && S.phase === "active"){
+    S.asks++;
+    const fair = S.done >= Math.ceil(S.count * 0.75) && S.outs + S.reaches <= 1 && S.asks <= 2;
+    if (fair) finished("enough");
+    else { S.count += 5; S.extra = (S.extra || 0) + 5; say(pick(ENOUGH_NO)); alertHud("+5 — for asking"); }
+  }
+});
+function breakdown(){ finished("breakdown"); }
+
+/* ---------- drawing ---------- */
+function render(now = performance.now()){
+  const g = gripRect(), t = trapPos(), pain = painLevel();
+  $("grip").style.left = g.x + "px"; $("grip").style.top = g.y + "px";
+  $("grip").className = S.holding ? "held" : (S.phase === "active" && !S.holding ? "slip" : "");
+  $("trap").style.left = t.x + "px"; $("trap").style.top = t.y + "px";
+
+  const words = S.D.noWords ? 0 : clamp(1 - (pain - 0.35) / 0.35, 0, 1);          // past about a third of your limit the words go; hard: never there
+  $("grip").querySelector(".w").style.display = words > 0.02 ? "" : "none"; $("trap").querySelector(".w").style.display = words > 0.02 ? "" : "none";
+  $("grip").querySelector(".w").style.opacity = words; $("trap").querySelector(".w").style.opacity = words;
+  // tears blur everything in the scene (the keys and bars stay sharp)
+  const edge = Math.pow(clamp((S.pA / S.limit - 0.75) / 0.25, 0, 1), 1.4);          // the last quarter before your limit
+  const blur = (S.tears * 6 + edge * 20) * S.D.blur * (1 - cond / 250);
+  let tx = 0, ty = 0;
+  if (now < S.shakeUntil){ const k = (S.shakeUntil - now) / 600; tx = rnd(-1, 1) * S.shakeAmp * k; ty = rnd(-1, 1) * S.shakeAmp * k * 0.7; }
+  $("stage").style.filter = `blur(${blur.toFixed(2)}px)`;
+  $("stage").style.transform = `translate(${tx.toFixed(1)}px,${ty.toFixed(1)}px)`;
+  $("vig").style.opacity = String(clamp(pain * 0.75 + edge * 0.2, 0, 0.92));
+  $("count").textContent = `${S.done} / ${S.count}`;
+  $("extras").textContent = S.extra ? `includes +${S.extra} extra` : "";
+  $("bS").style.width = clamp(S.pS / 80 * 100, 0, 100) + "%";
+  $("bA").style.width = clamp(S.pA / 140 * 100, 0, 100) + "%";          // no line: your limit isn't shown
+  $("bC").style.width = S.poise + "%";
+}
+
+/* ---------- the end ---------- */
+function finished(outcome){
+  if (S.outcome) return;
+  S.outcome = outcome; cancelAnimationFrame(raf);
+  $("sess").classList.add("hidden"); $("res").classList.remove("hidden");
+  const close = clamp(S.pA / S.limit, 0, 1.2), pct = Math.round(close * 100);
+  let gain = 0, title, text;
+  if (outcome === "done" || outcome === "enough"){
+    gain = Math.round(3 + 9 * close * (S.poise / 100));
+    title = outcome === "enough" ? "“That's enough.”" : "You took every one.";
+    text = outcome === "enough" ? "You asked at the right moment, and it was accepted. Let go, stand up — carefully." : `All ${S.count}. You let go of ${S.I.rail} with shaking hands.`;
+  } else if (outcome === "red"){
+    gain = close > 0.8 ? 1 : 0;
+    title = "Red."; text = close > 0.8 ? "You stopped at the edge — the right call. It stops at once, and no one is cross with you." : "You stopped well before your limit. That's always allowed — but you had more in you than you thought.";
+  } else {
+    gain = -3; title = "You broke down."; text = "It went past what you could take today. Everything stops; strong arms, a blanket, a long while before you can talk.";
+  }
+  cond = clamp(cond + gain, 0, 100); store("hs_cond", cond);
+  $("resTitle").textContent = title; $("resText").textContent = text;
+  const rows = [["Strokes taken", `${S.done} of ${S.count}`], ["Held on cleanly for", S.firstSlip == null ? `all ${S.done} strokes` : `${S.firstSlip} stroke${S.firstSlip === 1 ? "" : "s"}`], ["Times you let go", S.outs], ["Times you reached back", S.reaches], ["Yellows", S.yellows], ["Breaks you needed", S.breaks || 0],
+    ["Asked “is that enough?”", S.asks], ["Poise", Math.round(S.poise) + "%"], ["How close you came to your limit", pct + "%" + (pct >= 85 && outcome !== "breakdown" ? " — right at the edge" : "")],
+    ["Your real limit today was", Math.round(S.limit) + " ache (you reached " + Math.round(S.pA) + ")"], ["Conditioning", `${gain >= 0 ? "+" : ""}${gain} → ${Math.round(cond)}/100`]];
+  $("resTable").innerHTML = rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("");
+}
+
+setupScreen();
+</script>
+</body>
+</html>
